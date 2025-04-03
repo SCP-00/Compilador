@@ -1,0 +1,33 @@
+import json
+from UTP_lexer import tokenize
+from UTP_parser import Parser
+from UTP_error_handler import ErrorHandler
+
+# Código de prueba: una secuencia sencilla para declarar una variable y luego imprimirla.
+test_code = """
+var x = 2 + 3;
+print x;
+"""
+
+# Crear el manejador de errores y tokenizar el código de prueba
+error_handler = ErrorHandler()
+tokens = tokenize(test_code)
+
+# Crear una instancia del Parser con los tokens y el manejador de errores
+parser = Parser(tokens, error_handler)
+
+# Realizar el análisis para obtener el AST completo
+ast = parser.parse()
+
+# Verificar si hubo errores en la compilación
+if error_handler.has_errors():
+    error_handler.report_errors()
+else:
+    # Convertir el AST a JSON utilizando la función to_json()
+    ast_json = parser.to_json()
+    
+    # Imprimir el JSON con formato legible
+    print(json.dumps(ast_json, indent=2))
+    
+    # Opcional: guardar el AST en un archivo (por defecto "ast_output.json")
+    parser.save_ast_to_json("ast_output.json")
