@@ -2,7 +2,7 @@
 
 from GOX_lexer import Token, tokenize
 from GOX_AST_nodes import Integer, Float, Boolean, String, BinOp, UnaryOp, Location, FunctionCall, Print
-from GOX_AST_nodes import Assignment, If, ConstantDecl, VariableDecl, FunctionDecl, Return, While, Parameter, Program
+from GOX_AST_nodes import Assignment, If, ConstantDecl, VariableDecl, FunctionDecl, Return, While, Parameter, Program, ImportDecl, FunctionImportDecl, Char, Dereference
 from GOX_error_handler import ErrorHandler
 import json
 
@@ -144,6 +144,8 @@ class Parser:
         if self.current_token and self.current_token.type in ['PLUS', 'MINUS', 'NOT', 'DEREF']:
             op = self.current_token.value
             self.advance()
+            if self.current_token.type == 'DEREF':
+                return Dereference(self.parse_primary())
             return UnaryOp(op, self.parse_primary())
         return self.parse_primary()
 
@@ -181,6 +183,9 @@ class Parser:
         elif token.type == 'STRING':
             self.advance()
             return String(token.value)
+        elif token.type == 'CHAR':
+            self.advance()
+            return Char(token.value)
         else:
             self.error_handler.add_error("Invalid expression", token.lineno)
             self.advance()
@@ -235,25 +240,23 @@ class Parser:
     def parse_declaration(self):
         is_const = self.current_token.type == 'CONST'
         self.advance()
-        ident = self.current_token.value
-        self.expect('ID', "Expected identifier in declaration")
+        ident = self.expect('ID', "Expected identifier in declaration").value
         
         # Add proper type handling
         var_type = None
-        if self.current_token and self.current_token.type == 'ID':
+        if self.current_token and self.current_token.type in ['INT', 'FLOAT_TYPE', 'BOOL', 'STRING_TYPE', 'CHAR_TYPE', 'ID']:
             var_type = self.current_token.value
             self.advance()
         
-        value = None
-        if self.current_token and self.current_token.type == 'ASSIGN':
-            self.advance()
-            value = self.parse_expression()
+        self.expect('ASSIGN', "Expected '=' in declaration")
+        value = self.parse_expression()
         
-        # More lenient semicolon handling
-        if self.current_token and self.current_token.type == 'SEMI':
-            self.advance()
+        self.expect('SEMI', "Missing ';' after declaration")
         
-        return ConstantDecl(ident, value) if is_const else VariableDecl(ident, var_type, value)
+        if is_const:
+            return ConstantDecl(ident, value)
+        else:
+            return VariableDecl(ident, var_type, value)
 
     def parse_function_call(self):
         name = self.current_token.value  # Se asume que es una llamada a función
@@ -271,21 +274,38 @@ class Parser:
 
     def parse_function(self):
         self.expect('FUNC')
-        name = self.current_token.value
-        self.expect('ID', "Expected function name after FUNC keyword")
+        name = self.expect('ID', "Expected function name after FUNC keyword").value
         self.expect('LPAREN', "Expected '(' after function name in declaration")
         params = []
         if self.current_token.type != 'RPAREN':
-            param_name = self.current_token.value
-            self.expect('ID', "Expected parameter name")
-            params.append(Parameter(param_name, None))
+            param_name = self.expect('ID', "Expected parameter name").value
+            
+            # Handle parameter type
+            param_type = None
+            if self.current_token and self.current_token.type in ['INT', 'FLOAT_TYPE', 'BOOL', 'STRING_TYPE', 'CHAR_TYPE', 'ID']:
+                param_type = self.current_token.value
+                self.advance()
+            
+            params.append(Parameter(param_name, param_type))
             while self.current_token and self.current_token.type == 'COMMA':
                 self.advance()
-                param_name = self.current_token.value
-                self.expect('ID', "Expected parameter name")
-                params.append(Parameter(param_name, None))
+                param_name = self.expect('ID', "Expected parameter name").value
+                
+                # Handle parameter type
+                param_type = None
+                if self.current_token and self.current_token.type in ['INT', 'FLOAT_TYPE', 'BOOL', 'STRING_TYPE', 'CHAR_TYPE', 'ID']:
+                    param_type = self.current_token.value
+                    self.advance()
+                
+                params.append(Parameter(param_name, param_type))
         self.expect('RPAREN', "Expected ')' after parameters in function declaration")
-        return_type = None  # Actualmente no se gestiona el tipo de retorno
+        
+        # Handle return type
+        return_type = None
+        if self.current_token and self.current_token.type in ['INT', 'FLOAT_TYPE', 'BOOL', 'STRING_TYPE', 'CHAR_TYPE', 'ID']:
+            return_type = self.current_token.value
+            self.advance()
+        
         self.expect('LBRACE', "Expected '{' to start function body")
         body = []
         while self.current_token and self.current_token.type != 'RBRACE':
@@ -302,12 +322,48 @@ class Parser:
     def parse_import(self):
         """Parse an import declaration"""
         self.expect('IMPORT')
-        module_token = self.expect('ID', "Expected module name after IMPORT")
-        if not module_token:
-            return None
-        self.expect('SEMI', "Missing ';' after import declaration")
-        from GOX_AST_nodes import ImportDecl  # Asegurarse de importar el nodo
-        return ImportDecl(module_token.value)
+        
+        # Check if it's a function import
+        is_func_import = False
+        if self.current_token and self.current_token.type == 'FUNC':
+            is_func_import = True
+            self.advance()
+        
+        module_name = self.expect('ID', "Expected module name after IMPORT").value
+        
+        # If it's a function import, parse the signature
+        if is_func_import:
+            self.expect('LPAREN', "Expected '(' after function name in import")
+            params = []
+            
+            # Parse parameters
+            while self.current_token and self.current_token.type != 'RPAREN':
+                param_name = self.expect('ID', "Expected parameter name").value
+                
+                # Handle parameter type
+                param_type = None
+                if self.current_token and self.current_token.type in ['INT', 'FLOAT_TYPE', 'BOOL', 'STRING_TYPE', 'CHAR_TYPE', 'ID']:
+                    param_type = self.current_token.value
+                    self.advance()
+                
+                params.append(Parameter(param_name, param_type))
+                
+                if self.current_token.type == 'COMMA':
+                    self.advance()
+            
+            self.expect('RPAREN', "Expected ')' after parameters in import")
+            
+            # Handle return type
+            return_type = None
+            if self.current_token and self.current_token.type in ['INT', 'FLOAT_TYPE', 'BOOL', 'STRING_TYPE', 'CHAR_TYPE', 'ID']:
+                return_type = self.current_token.value
+                self.advance()
+            
+            self.expect('SEMI', "Missing ';' after import declaration")
+            return FunctionImportDecl(module_name, params, return_type)
+        else:
+            self.expect('SEMI', "Missing ';' after import declaration")
+            return ImportDecl(module_name)
 
     def to_json(self):
         """Convert the AST to JSON format"""
@@ -333,6 +389,8 @@ class Parser:
         elif isinstance(node, Boolean):
             data["value"] = node.value
         elif isinstance(node, String):
+            data["value"] = node.value
+        elif isinstance(node, Char):
             data["value"] = node.value
         elif isinstance(node, BinOp):
             data["operator"] = node.op
@@ -375,9 +433,14 @@ class Parser:
         elif isinstance(node, Parameter):
             data["name"] = node.name
             data["type"] = node.param_type
-        # Serializar el nuevo nodo de importación
-        elif hasattr(node, "module_name"):
+        elif isinstance(node, ImportDecl):
             data["module_name"] = node.module_name
+        elif isinstance(node, FunctionImportDecl):
+            data["module_name"] = node.module_name
+            data["params"] = self._serialize_ast(node.params)
+            data["return_type"] = node.return_type
+        elif isinstance(node, Dereference):
+            data["location"] = self._serialize_ast(node.location)
         return data
 
     def save_ast_to_json(self, filename="ast_oGOXut.json"):
