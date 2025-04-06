@@ -135,6 +135,14 @@ class Char(ASTNode):
     def __repr__(self):
         return f"Char({self.value})"
 
+class Dereference(ASTNode):
+    """Represents a dereference operation."""
+    def __init__(self, location):
+        self.location = location
+
+    def __repr__(self):
+        return f"Dereference({self.location})"
+
 # ---------------------------------------------------------------------
 # Declarations
 # ---------------------------------------------------------------------
