@@ -20,6 +20,13 @@ TOKEN_SPEC = [
     ('FALSE', r'\bfalse\b'),
     ('INPUT', r'\binput\b'),
 
+    # Data types
+    ('INT', r'\bint\b'),
+    ('FLOAT_TYPE', r'\bfloat\b'),
+    ('BOOL', r'\bbool\b'),
+    ('STRING_TYPE', r'\bstring\b'),
+    ('CHAR_TYPE', r'\bchar\b'),
+
     ('HEX', r'0[xX][0-9a-fA-F]+'),
     ('BINARY', r'0[bB][01]+'),
 
